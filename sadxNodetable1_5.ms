@@ -87,7 +87,7 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 		
 		if skipflag == false then
 		(			
-		format "node %; \n" (n-1) to:scenefile
+		format "node %; #%\n" (n-1) selection[n].name to:scenefile
 		obj_exp_path = (outpath.text + "\\" + (n-1) as string + ".obj")
 		objfile = createfile obj_exp_path
 		format "mtllib scene.mtl\n" to:objfile
@@ -248,7 +248,7 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 					current_instance = getNodeByName (instances[curr_inst_count].name)
 					if(current_instance.name == selection[n].name) do continue
 					
-					format "instance %;\n" (n-1) to:scenefile
+					format "instance %; #%\n" (n-1) current_instance.name to:scenefile
 					format "pos % % %; \n" current_instance.pos[1] current_instance.pos[2] current_instance.pos[3] to:scenefile
 					camRotEuler = quatToEuler2 current_instance.rotation.controller.value
 					format "rot % % %; \n\n" camRotEuler.x camRotEuler.y camRotEuler.z to:scenefile
