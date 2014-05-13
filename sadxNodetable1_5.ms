@@ -22,7 +22,6 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 	(
 		currentsub = GetsubMtl meditMaterials[1] m
 		format "newmtl %\n" m to:mtlfile
-		format "Ka 1 1 1"
 		diff = currentsub.diffuse
 		diffscale = #()
 		diffscale[1] = diff.red as float
@@ -41,11 +40,47 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 		specscale[2] = specscale[2]/255
 		specscale[3] = specscale[3]/255
 		format "Ks % % %\n" specscale[1] specscale[2] specscale[3] to:mtlfile
-		format "illum 1\n" to:mtlfile
+		outputOpacity = currentsub.opacity / 100
+		format "d %\n"  outputOpacity to:mtlfile
+		format "Ke %\n" currentsub.Glossiness to:mtlfile
 		texid = m-1
 		format "texid %\n" texid to:mtlfile
-		format "Map_Ka %\n" currentsub.diffuseMap.filename to:mtlfile
-		format "Map_KD %\n\n" currentsub.diffuseMap.filename to:mtlfile
+		
+		if(currentsub.opacityMapEnable) do -- add check for opacity enable here
+		(
+			format "Map_Ka %\n" currentsub.diffuseMap.filename to:mtlfile
+		)
+		
+		if(currentsub.diffuseMapEnable == true) do -- add check for diffuse enable here
+		(
+			format "Map_Kd %\n" currentsub.diffuseMap.filename to:mtlfile
+		)
+		
+		if(currentsub.twoSided) do -- add check for double sided
+		(
+			format "-doublesided\n" to:mtlfile
+		)
+		
+		if(currentsub.diffusemap.coordinates.mappingType == 1) do
+		(
+			format "-enviroMap\n" to:mtlfile
+		)
+		
+		format "-U_Mirror %\n" currentsub.diffusemap.coordinates.U_Mirror to:mtlfile
+		format "-V_Mirror %\n" currentsub.diffusemap.coordinates.V_Mirror to:mtlfile
+		format "-U_Tile %\n" currentsub.diffusemap.coordinates.U_Tile to:mtlfile
+		format "-V_Tile %\n" currentsub.diffusemap.coordinates.V_Tile to:mtlfile
+		
+		if(currentsub.selfillumination == 100.0) then
+		(
+			format "-IgnoreLighting true\n" to:mtlfile
+		)
+		else
+		(
+			format "-IgnoreLighting false\n" to:mtlfile
+		)
+		
+		format "-flatshaded %\n\n" currentsub.faceted to:mtlfile
 	)
 	/*----------------END Creating Material File----------------*/
 	
