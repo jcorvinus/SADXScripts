@@ -206,7 +206,7 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 			for i=1 to totaltverts do -- Mesh data loop
 			(
 				tvert = getTVert selection[n].mesh i
-				format "vt % % #index: %\n" tvert[1] tvert[2] i to:objfile
+				format "vt % % #index: %\n" (tvert[1] * -1) tvert[2] i to:objfile
 			)
 		) else if GetNumTVerts (selection[n].mesh) == 0 then meshflags[1] = false
 		
