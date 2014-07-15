@@ -9,7 +9,6 @@ utility SA_MeshExporter "Nodetable / obj exporter" width:162 height:300
 	
 	on exp_exec pressed do
 	(
-	
 	scenepath = outpath.text + "\\nodetable.txt"
 	scenefile = createfile scenepath
 	

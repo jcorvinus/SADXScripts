@@ -1,23 +1,45 @@
-utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
+utility SA_MeshExporter "Nodetable exporter v1.6" width:162 height:300
 (
 	button help_button "Help" pos:[8,8] width:139 height:26
 
 	label lbl1 "Output Path" pos:[9,60] width:133 height:13
 	edittext outpath "" pos:[3,75] width:145 height:20
 	button btn_browse "Browse" pos:[7,100] width:78 height:26	
-	button exp_exec "Export Data" pos:[8,140] width:139 height:26
+	edittext startGbixValue "First GBIX value" pos:[8, 140] width:145 height:20
+	edittext pvmName "PVM Name" pos:[8,176] width:145 height:20
+	button exp_exec "Export Data" pos:[8,220] width:139 height:26
+	
+	on SA_MeshExporter open do
+	(
+		-- add a way to retrieve configuration settings here, such as default export folder, and location of PVM Compiler
+		startGBIXValue.text = "0"
+	)
 	
 	on help_button pressed do
 	(
-		messagebox "To export, select the models you would like to export in the scene. Supply a valid path in the 'output path' text box, and then press 'export data'."
-		messagebox "This exporter supports exporting surface flags! To use them, you'll need to use the user-defined properties in each object you want to apply them to.\nSelect an object, right-click on it and select 'object properties'. Then navigate to the 'user defined' tab."
-		messagebox "Surface flags are one per-line. they use the format 'flagname=value'\nExample: solid=true.\nThe only valid values for 'value' are true and false.\nFlagnames are all lower-case, no spaces."
-		messagebox "Available surface flags:\n   solid\n   water\n   nofriction\n   increasedacceleration\n   diggable\n   unclimbable\n   hurt\n   footprints\n   visible\n"
-		messagebox "If you don't apply surface flags to the model, it will assume the model is solid and visible.\nIn fact, you MUST turn solid and visible off manually. Supplying other flags will not disable solid/visible, you must set them to false yourself."
+		local mb = dotnetclass "MessageBox"
+		local button = (dotnetclass "MessageBoxButtons").OK
+		local icon = (dotnetclass "MessageBoxIcon").Warning
+		
+		mb.show ("To export, select the models you would like to export in the scene. Supply a valid path in the 'output path' text box, and then press 'export data'.") "Exporting" button icon
+		mb.show ("This exporter supports exporting surface flags! To use them, you'll need to use the user-defined properties in each object you want to apply them to.\nSelect an object, right-click on it and select 'object properties'. Then navigate to the 'user defined' tab.") "Surface Properties" button icon
+		mb.show ("Surface flags are one per-line. they use the format 'flagname=value'\nExample: solid=true\nThe only valid values for 'value' are true and false.\nFlagnames are all lower-case, no spaces.") "Surface Flags" button icon
+		mb.show ("Available surface flags:\n   solid\n   water\n   nofriction\n   noacceleration\n   cannotland\n   increasedacceleration\n   diggable\n   unclimbable\n   hurt\n   footprints\n   visible\n") "Surface Flags" button icon
+		mb.show ("If you don't apply surface flags to the model, it will assume the model is solid and visible.\nIn fact, you MUST turn solid and visible off manually. Supplying other flags will not disable solid/visible, you must set them to false yourself.") "Surface Flags" button icon
+		
+		mb.show ("The 'first GBIX' value is for the texturelist. PVR files have a 'global texture ID' that is used to prevent the game from loading the same texture twice. The value you supply here is the starting value, meaning each texture will get an id of this plus the current texture number") "Texture Lists" button icon
+		mb.show ("In regards to textures, this exporter creates two files - a texturelist.txt file for compiling a PVM, and a texturelist.c file for compiling into your mod *.dll file. It also creates a series of png files for compiling into your pvm file.") "Texture Lists" button icon
 	)
 	
 	on exp_exec pressed do
 	(
+		if(outpath.text == "") do 
+		(
+			return messageBox "No path supplied"
+		)
+		
+		gbixValue = startGbixValue.text as integer64
+		
 		scenepath = outpath.text + "\\nodetable.txt"
 		scenefile = createfile scenepath
 		
@@ -53,11 +75,169 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 		if(duplicates == true) do return messageBox "Fix the duplicate names, then export again."
 		
 		/*-------------Begin Creating Materal File--------------*/
-		submatcount = getNumSubmtls (meditMaterials[1])
-		for m=1 to submatcount do
+		uniqueMaterials = #()
+
+		for matIndx=1 to sceneMaterials.count do
 		(
-			currentsub = GetsubMtl meditMaterials[1] m
-			format "newmtl %\n" m to:mtlfile
+			currentMaterial = sceneMaterials[matIndx]
+			numSubs = getNumSubMtls currentMaterial
+			
+			if(numSubs >= 1) then -- multi material, must scan within for dupes
+			(
+				for subIndx = 1 to numSubs do -- loop through all sub materials
+				(
+					match = false
+					currentSub = currentMaterial.materialList[subIndx]
+					
+					for uniqueIndx = 1 to uniqueMaterials.count do
+					(
+						if(uniqueMaterials[uniqueIndx] == currentSub) do 
+						(
+							match = true
+							break
+						)
+						
+						if(uniqueMaterials[uniqueIndx].name == currentSub.name) do
+						(
+							match = true
+							break
+						)
+					)
+					
+					if(match == false) do
+					(
+						if(currentSub.diffuseMapEnable == true) do (append uniqueMaterials currentSub)
+					)
+				)
+			)
+			else if(numSubs == 0) do -- Single material, ok to check for dupes
+			(
+				match = false
+				for uniqueIndx = 1 to uniqueMaterials.count do
+				(
+					if(uniqueMaterials[uniqueIndx] == currentMaterial) do
+					(
+						match = true
+						break
+					)
+					
+					if(uniqueMaterials[uniqueIndx].name == currentMaterial.name) do
+					(
+						match = true
+						break
+					)
+				)
+				
+				if(match == false) do
+				(
+					if(currentMaterial.diffuseMapEnable == true) do append uniqueMaterials currentMaterial
+				)
+			)
+		)
+		
+		/*--------------------------Creating texturelist from materials!---------------------------*/
+		uniqueTexMaps = #()
+
+		for matIndx=1 to sceneMaterials.count do
+		(
+			currentMaterial = sceneMaterials[matIndx]
+			numSubs = getNumSubMtls currentMaterial
+			
+			if(numSubs >= 1) then -- multi material, must scan within for dupes
+			(
+				for subIndx = 1 to numSubs do -- loop through all sub materials
+				(
+					match = false
+					currentSub = currentMaterial.materialList[subIndx]
+					sanitizedTexMapName = getFilenameFile(currentSub.diffuseMap.fileName)
+					
+					for uniqueIndx = 1 to uniqueTexMaps.count do
+					(
+						if(currentSub.diffuseMapEnable == true) do
+						(
+							if(uniqueTexMaps[uniqueIndx] == sanitizedTexMapName) do 
+							(
+								match = true
+								break
+							)
+						)
+					)
+					
+					if(match == false) do
+					(
+						if(currentSub.diffuseMapEnable == true) do 
+						(
+							append uniqueTexMaps sanitizedTexMapName
+						)
+					)
+				)
+			)
+			else if(numSubs == 0) do -- Single material, ok to check for dupes
+			(
+				match = false
+				sanitizedTexMapName = getFilenameFile (currentMaterial.diffuseMap.fileName)
+				
+				for uniqueIndx = 1 to uniqueTexMaps.count do
+				(
+					if(currentMaterial.diffuseMapEnable == true) do
+					(				
+						if(uniqueTexMaps[uniqueIndx] == sanitizedTexMapName) do
+						(
+							match = true
+							break
+						)
+					)
+				)
+				
+				if(match == false) do
+				(
+					if(currentMaterial.diffuseMapEnable == true) do
+					(
+						append uniqueTexMaps sanitizedTexMapName
+					)
+				)
+			)
+		)
+		
+		texListPath = outpath.text + "\\" + pvmName.text + ".txt"
+		texListFile = createFile texListPath
+		
+		format ((formattedprint gbixValue) + "\n") to:texListFile
+
+		for finalIndx = 1 to uniqueTexMaps.count do
+		(
+			format (uniqueTexMaps[finalIndx] + "\n") to:texListFile
+		)
+		flush texListFile
+		close texListFile
+		
+		/*---------------Exporting C file--------------*/
+		cFilePath = outpath.text + "\\" + pvmName.text + ".c"
+		cFile = createFile cFilePath
+		
+		format "// Generated by Dude's Nodetable 1.6 exporter (maxscript version)\n\n" to:cFile
+		format "#include \"stdafx.h\"\n" to:cFile
+		format "#include \"SADXModLoader.h\"\n\n" to:cFile
+		
+		format ("NJS_TEXNAME " + pvmName.text + "_texlist_entries[] = {\n") to:cFile
+		
+		for finalIndx = 1 to uniqueTexMaps.count do
+		(
+			format ("\t{ \"" + uniqueTexMaps[finalIndx] + "\" },\n") to:cFile
+		)
+		
+		format "};\n\n" to:cFile
+		
+		format ("NJS_TEXLIST " + pvmName.text + "_texlist = { arrayptrandlength(" + pvmName.text + "_texlist_entries" +  ") };\n") to:cFile
+		
+		flush cFile
+		close cFile
+		/*--------------------------Done exporting texturelists---------------------------*/
+		sceneMatCount = uniqueMaterials.count
+		for m=1 to sceneMatCount do
+		(
+			currentsub = uniqueMaterials[m]
+			format "newmtl %\n" currentsub.name to:mtlfile
 			diff = currentsub.diffuse
 			diffscale = #()
 			diffscale[1] = diff.red as float
@@ -79,17 +259,33 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 			outputOpacity = currentsub.opacity / 100
 			format "d %\n"  outputOpacity to:mtlfile
 			format "Ke %\n" currentsub.Glossiness to:mtlfile
-			texid = m-1
-			format "texid %\n" texid to:mtlfile
-			
+				
 			if(currentsub.opacityMapEnable) do -- add check for opacity enable here
 			(
 				format "Map_Ka %\n" currentsub.diffuseMap.filename to:mtlfile
 			)
 			
-			if(currentsub.diffuseMapEnable == true) do -- add check for diffuse enable here
+			if(currentsub.diffuseMapEnable == true) then -- add check for diffuse enable here
 			(
 				format "Map_Kd %\n" currentsub.diffuseMap.filename to:mtlfile
+				
+				sanitiziedMapName = getFilenameFile(currentsub.diffuseMap.filename)
+				texid = 0 -- safety value I guess, since undefined is no good
+			
+				for finalIndx = 1 to uniqueTexMaps.count do
+				(
+					if(uniqueTexMaps[finalIndx] == sanitiziedMapName) do
+					(
+						texid = finalIndx - 1
+						break
+					)
+				)
+				
+				format "texid %\n" texid to:mtlfile
+			)
+			else 
+			(
+				format "texid 0\n" texid to:mtlfile
 			)
 			
 			if(currentsub.twoSided) do -- add check for double sided
@@ -196,6 +392,7 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 			waterSurfaceValue = getUserProp selection[n] "water"
 			noFrictionSurfaceValue = getUserProp selection[n] "nofriction"
 			noAccelSurfaceValue = getUserProp selection[n] "noacceleration"
+			cannotLandSurfaceValue = getUserProp selection[n] "cannotland"
 			increaseAccelSurfaceValue = getUserProp selection[n] "increasedacceleration"
 			diggableSurfaceValue = getUserProp selection[n] "diggable"
 			unclimbableSurfaceValue = getUserProp selection[n] "unclimbable"
@@ -237,6 +434,11 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 			if(noAccelSurfaceValue != undefined) and (noAccelSurfaceValue == true) do
 			(
 				surfaceFlags += 8L
+			)
+			
+			if(cannotLandSurfaceValue != undefined) and (cannotLandSurfaceValue) do
+			(
+				surfaceFlags += 64L
 			)
 			
 			if(increaseAccelSurfaceValue != undefined) and (increaseAccelSurfaceValue == true) do
@@ -335,7 +537,7 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 				for i=1 to totaltverts do -- Mesh data loop
 				(
 					tvert = getTVert selection[n].mesh i
-					format "vt % % #index: %\n" tvert[1] tvert[2] i to:objfile
+					format "vt % % #index: %\n" (tvert[1] * -1) tvert[2] i to:objfile
 				)
 			) else if GetNumTVerts (selection[n].mesh) == 0 then meshflags[1] = false
 			
@@ -377,31 +579,45 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 					currentpoly = 0
 					currID = getFaceMatID selection[n].mesh _curSel[1]
 						format "\n" to:objfile
-					format "usemtl % \n" currID to:objfile
-					for j=1 to _curSel.count do
+					curMeshMtlName = ""
+					
+					if(selection[n].material != undefined) do
 					(
-						p = getFace mesh _curSel[j]
-						if meshflags[1] == true and meshflags[2] == true then
+						if(getnumSubmtls selection[n].material > 0) then
 						(
-							tvface = (getTVFace mesh _curSel[j]) -- should return an array of size 3
-							vcface = (getVCFace mesh _curSel[j]) -- should return an array of size 3
-							format "f %/%/%/% %/%/%/% %/%/%/% \n" (p[1] as integer) (tvface[1] as integer) (p[1] as integer) (vcface[1] as integer) (p[2] as integer) (tvface[2] as integer) (p[2] as integer) (vcface[2] as integer) (p[3] as integer) (tvface[3] as integer) (p[3] as integer) (vcface[3] as integer) to:objfile 
+							curMeshMtlName = selection[n].material.materiallist[currID].name
 						)
-						else if meshflags[1] == true and meshflags[2] == false then
+						else 
 						(
-							tvface = (getTVFace mesh _curSel[j])
-							format "f %/%/% %/%/% %/%/%\n" (p[1] as integer) (tvface[1] as integer) (p[1] as integer) (p[2] as integer) (tvface[2] as integer) (p[2] as integer) (p[3] as integer) (tvface[3] as integer) (p[3] as integer) to:objfile
+							curMeshMtlName = selection[n].material.name
 						)
-						else if meshflags[1] == false and meshflags[2] == false then
+						
+						format "usemtl % \n" curMeshMtlName to:objfile
+						for j=1 to _curSel.count do
 						(
-							format "f %//% %//% %//%\n" (p[1] as integer) (p[1] as integer) (p[2] as integer) (p[2] as integer) (p[3] as integer) (p[3] as integer) to:objfile
+							p = getFace mesh _curSel[j]
+							if meshflags[1] == true and meshflags[2] == true then
+							(
+								tvface = (getTVFace mesh _curSel[j]) -- should return an array of size 3
+								vcface = (getVCFace mesh _curSel[j]) -- should return an array of size 3
+								format "f %/%/%/% %/%/%/% %/%/%/% \n" (p[1] as integer) (tvface[1] as integer) (p[1] as integer) (vcface[1] as integer) (p[2] as integer) (tvface[2] as integer) (p[2] as integer) (vcface[2] as integer) (p[3] as integer) (tvface[3] as integer) (p[3] as integer) (vcface[3] as integer) to:objfile 
+							)
+							else if meshflags[1] == true and meshflags[2] == false then
+							(
+								tvface = (getTVFace mesh _curSel[j])
+								format "f %/%/% %/%/% %/%/%\n" (p[1] as integer) (tvface[1] as integer) (p[1] as integer) (p[2] as integer) (tvface[2] as integer) (p[2] as integer) (p[3] as integer) (tvface[3] as integer) (p[3] as integer) to:objfile
+							)
+							else if meshflags[1] == false and meshflags[2] == false then
+							(
+								format "f %//% %//% %//%\n" (p[1] as integer) (p[1] as integer) (p[2] as integer) (p[2] as integer) (p[3] as integer) (p[3] as integer) to:objfile
+							)
+							else if meshflags[1] == false and meshflags[2] == true then
+							(
+								vcface = (getVCFace mesh _curSel[j])
+								format "f %//%/% %//%/% %//%/%\n" (p[1] as integer) (p[1] as integer) (vcface[1] as integer) (p[2] as integer) (p[2] as integer) (vcface[2] as integer) (p[3] as integer) (p[3] as integer) (vcface[3] as integer) to:objfile
+							)
 						)
-						else if meshflags[1] == false and meshflags[2] == true then
-						(
-							vcface = (getVCFace mesh _curSel[j])
-							format "f %//%/% %//%/% %//%/%\n" (p[1] as integer) (p[1] as integer) (vcface[1] as integer) (p[2] as integer) (p[2] as integer) (vcface[2] as integer) (p[3] as integer) (p[3] as integer) (vcface[3] as integer) to:objfile
-						)
-					)		
+					)					
 				)
 				if InstanceMgr.Getinstances selection[n] &instances > 1 do -- if higher than 1, we know we have instanced nodes to handle
 				(
@@ -432,6 +648,7 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 						waterSurfaceValue = getUserProp current_instance "water"
 						noFrictionSurfaceValue = getUserProp current_instance "nofriction"
 						noAccelSurfaceValue = getUserProp current_instance "noacceleration"
+						cannotLandSurfaceValue = getUserProp current_instance "cannotland"
 						increaseAccelSurfaceValue = getUserProp current_instance "increasedacceleration"
 						diggableSurfaceValue = getUserProp current_instance "diggable"
 						unclimbableSurfaceValue = getUserProp current_instance "unclimbable"
@@ -473,6 +690,11 @@ utility SA_MeshExporter "Nodetable / obj exporter v1.6" width:162 height:300
 						if(noAccelSurfaceValue != undefined) and (noAccelSurfaceValue == true) do
 						(
 							surfaceFlags += 8L
+						)
+						
+						if(cannotLandSurfaceValue != undefined) and (cannotLandSurfaceValue) do
+						(
+							surfaceFlags += 64L
 						)
 						
 						if(increaseAccelSurfaceValue != undefined) and (increaseAccelSurfaceValue == true) do
